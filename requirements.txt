@@ -1,0 +1,28 @@
+# Core Backend Frameworks
+Django>=4.2.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.0.0
+
+# FastAPI Microservice
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+pydantic>=2.0
+httpx>=0.24.0
+aiofiles>=23.0.0
+
+# Database & ORM
+prisma>=0.9.1
+psycopg2-binary>=2.9.6
+python-dotenv>=1.0.0
+
+# Document Processing & NLP
+pypdf>=3.9.0
+pdfplumber>=0.9.0
+python-docx>=0.8.11
+openpyxl>=3.0.10
+
+# AI/LLM Integration
+langchain>=0.0.200
+langchain-core>=0.0.1
+langchain-google-genai>=0.0.1
+google-generativeai>=0.1.0

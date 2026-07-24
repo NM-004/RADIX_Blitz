@@ -1,0 +1,104 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursiveHelperGenerate = true
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  roles     Role[]
+}
+
+model Role {
+  id                   String                  @id @default(uuid())
+  title                String
+  companyId            String
+  company              Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  skillExpectations    CompanySkillExpectation[]
+  jobDescriptions      JobDescription[]
+  talentCheckResults   TalentCheckResult[]
+}
+
+model CompanySkillExpectation {
+  id            String @id @default(uuid())
+  roleId        String
+  role          Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  categoryCode  String // COD, DSA, OOD, APTI, COMM, AI, CLOUD, SQL, SWE, SYSD, NETW, OS
+  expectedLevel Int    // 1-10
+  
+  @@unique([roleId, categoryCode])
+}
+
+model CandidateProfile {
+  id                 String               @id @default(uuid())
+  name               String
+  email              String               @unique
+  education          String?
+  cvFile             String?              // path or filename
+  skills             CandidateSkill[]
+  hackathons         String[]             // list of hackathons
+  internships        String[]             // list of internships
+  certifications     String[]             // list of certifications
+  preferredRoles     String[]             // list of preferred roles
+  talentCheckResults TalentCheckResult[]
+  skillMatchResults  SkillMatchResult[]
+}
+
+model CandidateSkill {
+  id            String           @id @default(uuid())
+  profileId     String
+  profile       CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skillName     String
+  categoryCode  String           // COD, DSA, OOD, etc.
+  evidence      String?
+  confidence    String           // high, medium, low
+  level         Int              @default(5) // 1-10
+}
+
+model JobDescription {
+  id                String             @id @default(uuid())
+  roleId            String
+  role              Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  sourceFile        String
+  skills            JDSkill[]
+  skillMatchResults SkillMatchResult[]
+}
+
+model JDSkill {
+  id            String         @id @default(uuid())
+  jdId          String
+  jd            JobDescription @relation(fields: [jdId], references: [id], onDelete: Cascade)
+  skillName     String
+  categoryCode  String         // COD, DSA, OOD, etc.
+  evidence      String?
+  confidence    String         // high, medium, low
+}
+
+model TalentCheckResult {
+  id             String           @id @default(uuid())
+  profileId      String
+  profile        CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  readinessScore Int              // 0-100
+  gapDetails     Json             // Stores details of gap per skillset (e.g. required vs candidate level)
+  checkedAt      DateTime         @default(now())
+}
+
+model SkillMatchResult {
+  id             String           @id @default(uuid())
+  profileId      String
+  profile        CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  jdId           String
+  jd             JobDescription   @relation(fields: [jdId], references: [id], onDelete: Cascade)
+  matchScore     Int              // 0-100
+  matchedSkills  Json             // list of matched skills (with details)
+  missingSkills  Json             // list of missing skills (with recommendations)
+  matchedAt      DateTime         @default(now())
+}
