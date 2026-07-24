@@ -7,15 +7,12 @@ generator client_js {
   provider = "prisma-client-js"
 }
 
-generator client_py {
-  provider             = "prisma-client-py"
-  interface            = "asyncio"
-}
 
 model Company {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  roles     Role[]
+  id                String             @id @default(uuid())
+  name              String             @unique
+  roles             Role[]
+  skillMatchResults SkillMatchResult[]
 }
 
 model Role {
@@ -100,6 +97,8 @@ model SkillMatchResult {
   profile        CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   jdId           String
   jd             JobDescription   @relation(fields: [jdId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   matchScore     Int              // 0-100
   matchedSkills  Json             // list of matched skills (with details)
   missingSkills  Json             // list of missing skills (with recommendations)

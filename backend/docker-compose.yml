@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: radix_admin
+      POSTGRES_PASSWORD: radix_secure_password123
+      POSTGRES_DB: radix_talent_match
+    ports:
+      - "5432:5432"
