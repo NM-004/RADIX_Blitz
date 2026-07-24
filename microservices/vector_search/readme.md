@@ -24,6 +24,6 @@ This microservice provides an extremely fast, high-performance API for calculati
    ```
 2. Start the FastAPI server (we recommend port 8001 to avoid conflicts):
    ```bash
-   uvicorn main:app --reload --port 8001
+   fastapi dev main.py --port 8001
    ```
 3. The API will now be listening at `http://127.0.0.1:8001`. You can open `http://127.0.0.1:8001/docs` in your browser to test it via Swagger UI, or use the provided `test.ipynb`.
