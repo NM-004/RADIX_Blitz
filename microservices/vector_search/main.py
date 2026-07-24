@@ -75,12 +75,8 @@ async def vector_match(request: MatchRequest):
             with open(GLOBAL_SKILLS_PATH, "w") as f:
                 json.dump(global_skills, f)
 
-        # 2. Ephemeral DB for Matching (Company Requirements vs Candidate)
+        # 2. Ephemeral Exact Matching (Company Requirements vs Candidate)
         req_embeddings = model.encode(request.required_skills, normalize_embeddings=True).astype(np.float32)
-        
-        idx = turbovec.TurboQuantIndex(dim=EMBEDDING_DIM)
-        idx.add(req_embeddings)
-        idx.prepare()
         
         matched = set()
         partial = []
@@ -92,11 +88,18 @@ async def vector_match(request: MatchRequest):
         if request.candidate_skills:
             cand_embeddings = model.encode(request.candidate_skills, normalize_embeddings=True).astype(np.float32)
             
-            distances, indices = idx.search(cand_embeddings, 1)
+            # Compute exact pairwise L2 distances using numpy broadcasting
+            # req_embeddings shape: (num_req, DIM)
+            # cand_embeddings shape: (num_cand, DIM)
             
             for i, cand_skill in enumerate(request.candidate_skills):
-                dist = distances[i][0]
-                closest_idx = indices[i][0]
+                # Calculate exact L2 distances between this candidate skill and all required skills
+                diff = req_embeddings - cand_embeddings[i]
+                distances = np.linalg.norm(diff, axis=1)
+                
+                # Find the index of the closest required skill
+                closest_idx = np.argmin(distances)
+                dist = distances[closest_idx]
                 matched_doc = request.required_skills[closest_idx]
                 
                 # Strong Match Threshold (approx >0.85 cosine similarity)
