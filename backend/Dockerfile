@@ -1,11 +1,19 @@
 FROM node:20-slim
 
-# Install OpenSSL for Prisma ORM runtime compatibility
-RUN apt-get update && apt-get install -y openssl netcat-openbsd && rm -rf /var/lib/apt/lists/*
+# Install OpenSSL, Python3 & pip for Prisma Python client generator compatibility
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    netcat-openbsd \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install prisma python package for prisma-client-py generator
+RUN pip3 install --no-cache-dir prisma --break-system-packages || pip3 install --no-cache-dir prisma
 
 WORKDIR /app
 
-# Copy package manifests and install packages
+# Copy package manifests and install Node packages
 COPY backend/package*.json ./
 RUN npm install
 
@@ -13,7 +21,7 @@ RUN npm install
 COPY backend/prisma ./prisma
 COPY backend/ ./
 
-# Generate Prisma Client
+# Generate both Prisma JS and Python Clients
 RUN npx prisma generate
 
 EXPOSE 8000
