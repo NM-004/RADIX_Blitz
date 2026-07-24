@@ -3,7 +3,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-generator client {
+generator client_js {
+  provider = "prisma-client-js"
+}
+
+generator client_py {
   provider             = "prisma-client-py"
   interface            = "asyncio"
   recursiveHelperGenerate = true

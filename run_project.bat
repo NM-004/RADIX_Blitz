@@ -5,7 +5,7 @@ echo ==============================================================
 echo.
 
 :: Check for Docker
-echo [1/6] Launching PostgreSQL database in Docker...
+echo [1/7] Launching PostgreSQL database in Docker...
 docker-compose -f db/docker-compose.db.yml up -d
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Docker compose failed to start. Make sure Docker Desktop is running!
@@ -15,8 +15,8 @@ if %ERRORLEVEL% neq 0 (
 echo Database container is up and running.
 echo.
 
-:: Install dependencies
-echo [2/6] Verifying Python requirements...
+:: Install Python dependencies for FastAPI & Seed script
+echo [2/7] Verifying Python requirements...
 pip install -r requirements.txt
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to install Python dependencies.
@@ -25,9 +25,23 @@ if %ERRORLEVEL% neq 0 (
 )
 echo.
 
+:: Install Node.js Backend dependencies
+echo [3/7] Setting up Node.js Backend dependencies...
+cd backend
+call npm install
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Failed to install Node.js backend dependencies.
+    cd ..
+    pause
+    exit /b %ERRORLEVEL%
+)
+cd ..
+echo Node.js packages installed.
+echo.
+
 :: Prisma Setup
-echo [3/6] Syncing database schema with Prisma ORM...
-prisma db push --schema=db/schema.prisma
+echo [4/7] Syncing database schema with Prisma ORM...
+npx prisma db push --schema=db/schema.prisma
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Prisma db push failed.
     pause
@@ -36,8 +50,8 @@ if %ERRORLEVEL% neq 0 (
 echo Schema synchronized.
 echo.
 
-echo [4/6] Generating Prisma Client...
-prisma generate --schema=db/schema.prisma
+echo [5/7] Generating Prisma Clients (Node.js and Python)...
+npx prisma generate --schema=db/schema.prisma
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Prisma Client generation failed.
     pause
@@ -46,7 +60,7 @@ if %ERRORLEVEL% neq 0 (
 echo.
 
 :: Seeding
-echo [5/6] Seeding default company expectations (Google, Microsoft, Oracle)...
+echo [6/7] Seeding default company expectations (Google, Microsoft, Oracle)...
 python db/seed.py
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Seeding script failed.
@@ -57,9 +71,9 @@ echo Seeding finished.
 echo.
 
 :: Start services in new windows
-echo [6/6] Launching backend servers...
-echo Starting Django Backend on http://localhost:8000...
-start "Django Backend Server" cmd /k "python backend/manage.py runserver 0.0.0.0:8000"
+echo [7/7] Launching backend servers...
+echo Starting Node.js Backend on http://localhost:8000...
+start "Node.js Backend Server" cmd /k "cd backend && npm start"
 
 echo Starting FastAPI Analytics Microservice on http://localhost:8001...
 start "FastAPI Analytics Microservice" cmd /k "uvicorn microservices.main:app --port 8001 --reload"
@@ -82,7 +96,7 @@ echo.
 echo ==============================================================
 echo           Services started successfully!
 echo ==============================================================
-echo - Django Backend: http://localhost:8000
+echo - Node.js Backend: http://localhost:8000
 echo - FastAPI Microservice: http://localhost:8001
 echo - React Frontend: http://localhost:5173
 echo.
