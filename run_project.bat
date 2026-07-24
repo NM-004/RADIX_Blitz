@@ -15,18 +15,8 @@ if %ERRORLEVEL% neq 0 (
 echo Database container is up and running.
 echo.
 
-:: Install Python dependencies for FastAPI & Seed script
-echo [2/7] Verifying Python requirements...
-pip install -r requirements.txt
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Failed to install Python dependencies.
-    pause
-    exit /b %ERRORLEVEL%
-)
-echo.
-
-:: Install Node.js Backend dependencies
-echo [3/7] Setting up Node.js Backend dependencies...
+:: Install Node.js Backend dependencies (pins Prisma 5.17.0 and installs tsx)
+echo [2/7] Setting up Node.js Backend dependencies...
 cd backend
 call npm install
 if %ERRORLEVEL% neq 0 (
@@ -39,11 +29,23 @@ cd ..
 echo Node.js packages installed.
 echo.
 
-:: Prisma Setup
+:: Install Python dependencies for FastAPI
+echo [3/7] Verifying Python requirements...
+pip install -r requirements.txt
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Failed to install Python dependencies.
+    pause
+    exit /b %ERRORLEVEL%
+)
+echo.
+
+:: Prisma Setup (Run from backend folder)
 echo [4/7] Syncing database schema with Prisma ORM...
-npx prisma db push --schema=db/schema.prisma
+cd backend
+call npx prisma@5.17.0 db push
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Prisma db push failed.
+    cd ..
     pause
     exit /b %ERRORLEVEL%
 )
@@ -51,19 +53,21 @@ echo Schema synchronized.
 echo.
 
 echo [5/7] Generating Prisma Clients (Node.js and Python)...
-npx prisma generate --schema=db/schema.prisma
+call npx prisma@5.17.0 generate
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Prisma Client generation failed.
+    cd ..
     pause
     exit /b %ERRORLEVEL%
 )
 echo.
 
-:: Seeding
+:: Seeding (Run from backend folder using local tsx configuration)
 echo [6/7] Seeding default company expectations (Google, Microsoft, Oracle)...
-python db/seed.py
+call npm run prisma:seed
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Seeding script failed.
+    cd ..
     pause
     exit /b %ERRORLEVEL%
 )
@@ -73,7 +77,8 @@ echo.
 :: Start services in new windows
 echo [7/7] Launching backend servers...
 echo Starting Node.js Backend on http://localhost:8000...
-start "Node.js Backend Server" cmd /k "cd backend && npm start"
+start "Node.js Backend Server" cmd /k "npm start"
+cd ..
 
 echo Starting FastAPI Analytics Microservice on http://localhost:8001...
 start "FastAPI Analytics Microservice" cmd /k "uvicorn microservices.main:app --port 8001 --reload"

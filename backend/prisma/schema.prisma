@@ -10,7 +10,6 @@ generator client_js {
 generator client_py {
   provider             = "prisma-client-py"
   interface            = "asyncio"
-  recursiveHelperGenerate = true
 }
 
 model Company {

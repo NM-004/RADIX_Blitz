@@ -8,7 +8,12 @@ import pdfplumber
 import docx
 from dotenv import load_dotenv
 
-load_dotenv()
+# Try loading from backend/.env first
+backend_env = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', '.env')
+if os.path.exists(backend_env):
+    load_dotenv(backend_env)
+else:
+    load_dotenv()
 
 logger = logging.getLogger(__name__)
 
