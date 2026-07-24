@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: radix_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: radix_admin
+      POSTGRES_PASSWORD: radix_secure_password123
+      POSTGRES_DB: radix_talent_match
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radix_admin -d radix_talent_match"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Node.js Express Backend Server (Port 8000)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: radix_backend
+    restart: always
+    environment:
+      PORT: 8000
+      DATABASE_URL: "postgresql://radix_admin:radix_secure_password123@postgres:5432/radix_talent_match?schema=public"
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 3. Document Parser Microservice (FastAPI - Port 8001)
+  parser_service:
+    build:
+      context: .
+      dockerfile: microservices/parser_service/Dockerfile
+    container_name: radix_parser_service
+    restart: always
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NODE_BACKEND_URL: "http://backend:8000"
+    ports:
+      - "8001:8001"
+
+  # 4. Talent Check & Job Finder Microservice (FastAPI - Port 8002)
+  talent_check_service:
+    build:
+      context: .
+      dockerfile: microservices/talent_check_service/Dockerfile
+    container_name: radix_talent_check_service
+    restart: always
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NODE_BACKEND_URL: "http://backend:8000"
+    ports:
+      - "8002:8002"
+
+  # 5. Skill Match & Assessments Microservice (FastAPI - Port 8003)
+  skill_match_service:
+    build:
+      context: .
+      dockerfile: microservices/skill_match_service/Dockerfile
+    container_name: radix_skill_match_service
+    restart: always
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NODE_BACKEND_URL: "http://backend:8000"
+    ports:
+      - "8003:8003"
+
+  # 6. React Frontend Portal (Vite + Nginx - Port 5173)
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: radix_frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

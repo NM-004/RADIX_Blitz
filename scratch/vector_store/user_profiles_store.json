@@ -1,0 +1,76 @@
+{
+  "vectors": {},
+  "metadata": {
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_COD_0": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Coding (python, java, javascript)",
+      "category_code": "COD",
+      "level": 6,
+      "evidence": "... with a proven ability to write secure, high-quality code in Python, Java, and C++. Recognized for translating complex architec ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_DSA_1": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Data Structures & Algorithms (algorithms)",
+      "category_code": "DSA",
+      "level": 5,
+      "evidence": "... g Data Analysis 2025 • Demonstrated ability to code complex algorithms in Python by engineering a hybrid machine learning regressi ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_COMM_2": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Communication (communication, writing)",
+      "category_code": "COMM",
+      "level": 5,
+      "evidence": "... Business, Gmail, and SharePoint APIs to improve secure data communication. Amazon ML Challenge - Predictive Pricing Engine | Python, ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_AI_3": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Artificial Intelligence (machine learning, ml, ai)",
+      "category_code": "AI",
+      "level": 6,
+      "evidence": "... g network latency to near-zero. • Troubleshot and optimized machine learning models to run on resource-constrained hardware, achieving a ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_CLOUD_4": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Cloud Computing (aws, azure, gcp)",
+      "category_code": "CLOUD",
+      "level": 6,
+      "evidence": "... ope - Smart Solar Panel Optimization | React, Node, Python, AWS,Docker GFG Hackathon • Engineered a cloud-native platform f ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_SQL_5": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "SQL & Databases (sql, databases, postgresql)",
+      "category_code": "SQL",
+      "level": 6,
+      "evidence": "... re Competencies Programming Languages: Java, Python, C/C++, SQL, JavaScript, TypeScript Software Engineering: Agile Methodo ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_SWE_6": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Software Engineering Practices (git, github, ci/cd)",
+      "category_code": "SWE",
+      "level": 6,
+      "evidence": "... ion Architecture & Cloud: REST APIs, Microservices, Docker, Git/GitHub, Cloud Basics (GCP/Azure) Data & AI: Big Data Concep ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_SYSD_7": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "System Design (microservices, architecture)",
+      "category_code": "SYSD",
+      "level": 5,
+      "evidence": "... e Coding, SDLC, Automation Architecture & Cloud: REST APIs, Microservices, Docker, Git/GitHub, Cloud Basics (GCP/Azure) Data & AI: Bi ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_OS_8": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Operating Systems (os)",
+      "category_code": "OS",
+      "level": 5,
+      "evidence": "... ials, Azure Data Fundamentals (Microsoft), Cisco Certified (OS Basics, Network Basics, JavaScript) Extracurriculars: Repre ..."
+    },
+    "profile_b78a0b50-52fd-41d2-9b7c-324ac2292682_OTHER_9": {
+      "profile_id": "b78a0b50-52fd-41d2-9b7c-324ac2292682",
+      "skill_name": "Technologies: fastapi, react, node.js",
+      "category_code": "OTHER",
+      "level": 6,
+      "evidence": "Found technologies: fastapi, react, node.js"
+    }
+  },
+  "dimension": 768
+}

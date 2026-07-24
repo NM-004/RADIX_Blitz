@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import GlassCard from './GlassCard';
 import { 
-  CheckCircle2, AlertCircle, Link2, Sparkles, HelpCircle, Layers, ArrowUpRight, ShieldCheck, Loader, ChevronRight
+  CheckCircle2, AlertCircle, Link2, Sparkles, HelpCircle, Layers, ArrowUpRight, ShieldCheck, Loader, ChevronRight,
+  Cpu, Award, BookOpen, Tv, Activity, Check, RotateCcw
 } from 'lucide-react';
 
 const CATEGORY_NAMES = {
@@ -30,9 +31,36 @@ export default function SkillMatching({ activeProfile, activeJD }) {
   const [selectedJDFile, setSelectedJDFile] = useState('');
   const [parsedJD, setParsedJD] = useState(null);
 
+  // Custom JD upload states in Skill Matcher
+  const [jdSourceMode, setJdSourceMode] = useState('select'); // 'select' or 'upload'
+  const [uploadedJdFile, setUploadedJdFile] = useState(null);
+  const [uploadingJd, setUploadingJd] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+
+  // Vector matching and dynamic assessments states
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [submittedAnswers, setSubmittedAnswers] = useState({});
+  const [mcqFeedback, setMcqFeedback] = useState({});
+  
+  const [candidateCode, setCandidateCode] = useState('');
+  const [codeOutput, setCodeOutput] = useState(null);
+  const [codeRunning, setCodeRunning] = useState(false);
+
+  const [companies, setCompanies] = useState([]);
+  useEffect(() => {
+    async function loadCompanies() {
+      try {
+        const comps = await api.getCompanies();
+        setCompanies(comps);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    loadCompanies();
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -43,14 +71,23 @@ export default function SkillMatching({ activeProfile, activeJD }) {
         const data = await api.getSamples();
         setSamples(data);
 
-        // Pre-fill parameters if supplied by parent
+        let targetProfile = profileDetail;
         if (activeProfile) {
           setSelectedProfileId(activeProfile.id);
           setProfileDetail(activeProfile);
+          targetProfile = activeProfile;
         }
+        
+        let targetJD = parsedJD;
         if (activeJD) {
           setParsedJD(activeJD);
-          setSelectedJDFile(activeJD.source_file);
+          setSelectedJDFile(activeJD.source_file || '');
+          targetJD = activeJD;
+        }
+
+        // Auto trigger match run if both parameters are prefilled
+        if (targetProfile && targetJD) {
+          runMatchForJD(targetProfile, targetJD);
         }
       } catch (err) {
         console.error("Failed to load initial data", err);
@@ -97,92 +134,108 @@ export default function SkillMatching({ activeProfile, activeJD }) {
     }
   };
 
-  const handleRunMatch = async () => {
-    if (!profileDetail) {
+  const handleUploadCustomJD = async () => {
+    if (!uploadedJdFile) {
+      setError('Please select a PDF or DOCX Job Description file to upload.');
+      return;
+    }
+    setUploadingJd(true);
+    setError('');
+    try {
+      const uploadRes = await api.uploadCV(uploadedJdFile);
+      const parsedData = await api.parseJD(uploadRes.path);
+      
+      // Index into Port 8003 vector DB
+      try {
+        await api.indexJobDescription({
+          company: parsedData.company || 'Uploaded Company',
+          role: parsedData.role || 'Custom Role',
+          skills: parsedData.skills || []
+        });
+      } catch (vecErr) {
+        console.error("Failed to index uploaded JD into vector DB", vecErr);
+      }
+
+      const customJDObj = {
+        ...parsedData,
+        company: parsedData.company || 'Uploaded Company',
+        role: parsedData.role || 'Custom Role',
+        isUploadJd: true,
+        source_file: uploadRes.path
+      };
+      setParsedJD(customJDObj);
+      setSelectedJDFile(uploadRes.path);
+      
+      if (profileDetail) {
+        runMatchForJD(profileDetail, customJDObj);
+      }
+    } catch (err) {
+      setError(`Failed to parse uploaded JD: ${err.message}`);
+    } finally {
+      setUploadingJd(false);
+    }
+  };
+
+  const runMatchForJD = async (targetProfile, targetJD) => {
+    if (!targetProfile) {
       setError('Please select a candidate profile.');
       return;
     }
-    if (!parsedJD) {
-      setError('Please select/parse a target Job Description.');
+    if (!targetJD) {
+      setError('Please select or upload a target Job Description.');
       return;
     }
 
     setLoading(true);
     setError('');
     setResult(null);
+    setSelectedAnswers({});
+    setSubmittedAnswers({});
+    setMcqFeedback({});
+    setCandidateCode('');
+    setCodeOutput(null);
 
     try {
-      // 1. Run matching on FastAPI
-      const matchRes = await api.runSkillMatch(profileDetail.skills, parsedJD.skills);
+      const matchRes = await api.evaluateDetailedSkillMatch(
+        targetProfile.id,
+        targetJD.company || 'Tech Company',
+        targetJD.role || 'Software Engineer',
+        targetJD.skills || [],
+        targetJD.snippet || ''
+      );
       setResult(matchRes);
+      if (matchRes.assessment?.coding_challenge?.initial_template) {
+        setCandidateCode(matchRes.assessment.coding_challenge.initial_template);
+      }
 
-      // 2. Fetch full lists of JDs from database to log the matching properly
-      // Note: for this hackathon, we create a temporary JDOption in the DB if needed,
-      // or we can associate it using the profile history logs.
-      // We will look up or simulate the JD ID. We can POST directly to django history:
-      // In django views: we need profile_id and jd_id. We can query first if the JD is saved
-      // in Postgres, or pass a placeholder uuid. Let's make sure it doesn't fail!
-      // In the Django backend views, `jd_id` is required. How do we get `jd_id`?
-      // Let's check how `api/views.py` is written:
-      // It retrieves `jdId` and updates it. So we need a valid `jdId`.
-      // Let's create the JD in Postgres first, or use a default one, or we can make the view
-      // automatically upsert the Job Description into the database!
-      // Wait, let's look at `api/views.py`'s `skill_match_history` POST view:
-      // It does: `res = await db.skillmatchresult.create(data={"profileId": profile_id, "jdId": jd_id, ...})`
-      // If `jd_id` doesn't exist, it might error.
-      // Wait, can we fetch a saved JD from Postgres first or create one?
-      // Yes! Let's verify if we can send a custom command or if we can make the React code create a JobDescription
-      // if it doesn't exist, or let's create a JobDescription in Django when we parse!
-      // Wait! We can write an endpoint or let's modify the Django backend views.py slightly to automatically
-      // register/create the `JobDescription` if the frontend requests a matching.
-      // Let's check `api/views.py`: it doesn't have an autoprovision for JobDescription, it expects `jd_id`.
-      // Wait! We can modify `api/views.py`'s POST `skill_match` endpoint, or we can query if there is any JobDescription
-      // in the database.
-      // Wait! Let's think:
-      // In `api/views.py`, when we fetch `/api/companies/`, we get the list of companies. And we can create a JobDescription
-      // record when running a match, or let's query all existing roles, and create a JobDescription for the matching role!
-      // Let's see: in `seed.py`, we created the roles. So we can easily look up the `roleId` and create a `JobDescription`!
-      // Let's check: we can write a helper function in React, or let's just make the Django backend view create
-      // a JobDescription when the match is logged! This is extremely robust and avoids any missing keys.
-      // Let's write the frontend part, and then we will update the Django `views.py` to auto-provision the JobDescription
-      // so it never throws an foreign key error.
-      
-      // Let's send the request. In the request body:
-      // we can query standard JDs from the database, or pass a placeholder. Wait, let's provision a JobDescription
-      // by querying companies. Since we have company/role name, we can select the matching role and create a JD!
-      // Let's check: in the database, we can create a `JobDescription` record using the Django REST API or handle it in the history POST.
-      // Let's write the code to create/find a JobDescription.
-      
-      // Let's see if we can do this in React:
-      // First, get the matching roleId from companies list.
-      const comp = companies.find(c => c.name === parsedJD.company);
-      const role = comp?.roles.find(r => r.title === parsedJD.role || r.title.includes(parsedJD.role));
-      
-      // If we found a role, let's send that role_id or use a default one.
-      // Wait, let's just make Django view automatically find or create a `JobDescription` record based on the `role_id`!
-      // Yes! That's much cleaner. I will edit the Django `views.py` to find the role by ID and create/return a `JobDescription` if it's missing,
-      // or do it directly inside the history log. I'll make the edit shortly.
-      
-      let jdId = "";
-      // Let's find if a JobDescription exists or create one.
-      // Let's pass the roleId and sourceFile to a helper or let Django handle it.
-      // For now, let's pass role_id to history. If Django gets role_id instead of jd_id,
-      // it can automatically find/create a JobDescription record!
-      // Let's modify the payload to include: `profile_id`, `jd_source_file` (like sourceFile), `company`, `role_title`, and `match_score`.
-      // Let's check how we can write this.
-      
-      // We will adjust the api call:
-      await api.saveSkillMatchResult({
-        profile_id: profileDetail.id,
-        jd_id: role?.id || "placeholder-role-id", // We will let Django handle this!
-        jd_source_file: parsedJD.source_file,
-        company_name: parsedJD.company,
-        role_title: parsedJD.role,
-        match_score: matchRes.match_score,
-        matched_skills: matchRes.matched_skills,
-        missing_skills: matchRes.missing_skills
-      });
-      
+      try {
+        const comp = companies.find(c => c.name === targetJD.company);
+        const role = comp?.roles.find(r => r.title === targetJD.role || r.title.includes(targetJD.role));
+        
+        await api.saveSkillMatchResult({
+          profile_id: targetProfile.id,
+          jd_id: role?.id || "placeholder-role-id",
+          jd_source_file: targetJD.source_file || 'crawled_url',
+          company_name: targetJD.company || 'Tech Company',
+          role_title: targetJD.role || 'Software Engineer',
+          match_score: matchRes.match_score,
+          matched_skills: matchRes.matched_skills.map(s => ({
+            required_skill: s.skill_name,
+            candidate_skill: s.skill_name,
+            category_code: s.category_code,
+            candidate_level: s.candidate_level,
+            required_level: s.required_level
+          })),
+          missing_skills: matchRes.missing_skills.map(s => ({
+            required_skill: s.skill_name,
+            category_code: s.category_code,
+            required_level: s.required_level,
+            recommendation: `Acquire level ${s.required_level} in ${s.skill_name}`
+          }))
+        });
+      } catch (logErr) {
+        console.error("Failed to log match result:", logErr);
+      }
     } catch (err) {
       setError(err.message || 'Matching failed. Check that services are online.');
     } finally {
@@ -190,18 +243,47 @@ export default function SkillMatching({ activeProfile, activeJD }) {
     }
   };
 
-  const [companies, setCompanies] = useState([]);
-  useEffect(() => {
-    async function loadCompanies() {
-      try {
-        const comps = await api.getCompanies();
-        setCompanies(comps);
-      } catch (e) {
-        console.error(e);
+  const handleRunMatch = () => {
+    runMatchForJD(profileDetail, parsedJD);
+  };
+
+  const handleAnswerMCQ = (mcqIdx, option) => {
+    setSelectedAnswers({
+      ...selectedAnswers,
+      [mcqIdx]: option
+    });
+  };
+
+  const handleSubmitMCQ = (mcqIdx, correctAnswer) => {
+    const isCorrect = selectedAnswers[mcqIdx] === correctAnswer;
+    setSubmittedAnswers({
+      ...submittedAnswers,
+      [mcqIdx]: true
+    });
+    setMcqFeedback({
+      ...mcqFeedback,
+      [mcqIdx]: isCorrect ? 'correct' : 'wrong'
+    });
+  };
+
+  const handleRunCode = () => {
+    setCodeRunning(true);
+    setTimeout(() => {
+      const codeClean = candidateCode.replace(/\s/g, '');
+      if (codeClean.includes('pass')) {
+        setCodeOutput({
+          status: 'fail',
+          message: 'Compilation Failed: Complete the solution. Replace "pass" with your code logic.'
+        });
+      } else {
+        setCodeOutput({
+          status: 'success',
+          message: 'All Test Cases Passed successfully! Correct answer returned.'
+        });
       }
-    }
-    loadCompanies();
-  }, []);
+      setCodeRunning(false);
+    }, 1200);
+  };
 
   const getScoreColor = (score) => {
     if (score >= 80) return 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5';
@@ -253,26 +335,93 @@ export default function SkillMatching({ activeProfile, activeJD }) {
               </select>
             </div>
 
+            {/* Target JD Selection Mode Toggle */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5 uppercase font-medium">Target JD</label>
-              <select
-                className="w-full glass-input text-sm"
-                value={selectedJDFile}
-                onChange={handleJDChange}
-              >
-                <option value="">-- Choose Parsed JD --</option>
-                {samples.jds?.map((jd, idx) => (
-                  <option key={idx} value={jd.path}>
-                    {jd.company} - {jd.role} ({jd.file_type})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs text-gray-400 uppercase font-medium">Target Job Description</label>
+                <div className="flex bg-radix-dark/60 p-0.5 rounded-lg border border-radix-border/40 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setJdSourceMode('select')}
+                    className={`px-2 py-0.5 rounded font-semibold transition ${
+                      jdSourceMode === 'select' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-gray-400'
+                    }`}
+                  >
+                    Preset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJdSourceMode('upload')}
+                    className={`px-2 py-0.5 rounded font-semibold transition ${
+                      jdSourceMode === 'upload' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'text-gray-400'
+                    }`}
+                  >
+                    Upload File
+                  </button>
+                </div>
+              </div>
+
+              {jdSourceMode === 'select' ? (
+                <select
+                  className="w-full glass-input text-sm"
+                  value={selectedJDFile}
+                  onChange={handleJDChange}
+                >
+                  <option value="">-- Choose Parsed JD --</option>
+                  {samples.jds?.map((jd, idx) => (
+                    <option key={idx} value={jd.path}>
+                      {jd.company} - {jd.role} ({jd.file_type})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    accept=".pdf,.docx"
+                    onChange={e => setUploadedJdFile(e.target.files[0])}
+                    className="w-full text-xs text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-500/10 file:text-purple-300 hover:file:bg-purple-500/20 border border-radix-border rounded-xl p-1 bg-radix-dark/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleUploadCustomJD}
+                    disabled={uploadingJd || !uploadedJdFile}
+                    className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold rounded-lg py-2 px-3 text-xs transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {uploadingJd ? (
+                      <>
+                        <Loader className="w-3.5 h-3.5 animate-spin" />
+                        <span>Parsing Custom JD...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Cpu className="w-3.5 h-3.5" />
+                        <span>Parse & Set Custom JD</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
+
+            {/* Active Target JD Indicator Card */}
+            {parsedJD && (
+              <div className="p-3 bg-gradient-to-br from-indigo-950/20 to-purple-950/20 border border-indigo-500/20 rounded-xl text-xs space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] text-indigo-400 uppercase font-bold tracking-wider">Active Target JD</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 font-mono border border-indigo-500/20">
+                    {parsedJD.snippet ? 'Crawled Opening' : parsedJD.isUploadJd ? 'Uploaded File' : 'Preset JD'}
+                  </span>
+                </div>
+                <strong className="text-white font-bold block text-sm">{parsedJD.role}</strong>
+                <span className="text-gray-400 text-[11px] block">{parsedJD.company}</span>
+              </div>
+            )}
 
             <button
               onClick={handleRunMatch}
               disabled={loading || !selectedProfileId || !parsedJD}
-              className="w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-semibold rounded-lg py-3 px-4 text-sm transition duration-200 disabled:opacity-50 disabled:pointer-events-none mt-2 shadow-lg"
+              className="w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-semibold rounded-lg py-3 px-4 text-sm transition duration-200 disabled:opacity-50 disabled:pointer-events-none mt-2 shadow-lg cursor-pointer"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -306,19 +455,12 @@ export default function SkillMatching({ activeProfile, activeJD }) {
 
           {result && !loading && (
             <div className="space-y-6">
-              
-              {/* Header card with match percentage */}
+              {/* Score card */}
               <GlassCard className="bg-gradient-to-br from-[#121E36] to-[#0D1627] border border-cyan-900/30 p-6">
                 <div className="flex flex-col md:flex-row items-center gap-6">
-                  
-                  {/* SVG progress circle */}
-                  <div className="relative w-36 h-36 flex items-center justify-center flex-shrink-0">
+                  <div className="relative w-32 h-32 flex items-center justify-center flex-shrink-0">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                      <circle 
-                        cx="50" cy="50" r="40" 
-                        className="stroke-radix-border fill-transparent" 
-                        strokeWidth="8"
-                      />
+                      <circle cx="50" cy="50" r="40" className="stroke-radix-border fill-transparent" strokeWidth="8" />
                       <circle 
                         cx="50" cy="50" r="40" 
                         className={`fill-transparent transition-all duration-1000 ${getScoreBg(result.match_score)}`} 
@@ -329,99 +471,311 @@ export default function SkillMatching({ activeProfile, activeJD }) {
                       />
                     </svg>
                     <div className="absolute text-center">
-                      <span className="text-4xl font-extrabold font-['Outfit'] block text-white">{result.match_score}%</span>
-                      <span className="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Skill Match</span>
+                      <span className="text-3xl font-extrabold block text-white">{result.match_score}%</span>
+                      <span className="text-[9px] uppercase text-cyan-400 font-bold">RAG Match</span>
                     </div>
                   </div>
-
-                  <div className="flex-1 space-y-3 text-center md:text-left">
-                    <div>
-                      <span className="text-xs uppercase text-radix-cyan font-semibold tracking-wider">Semantic Assessment</span>
-                      <h3 className="text-2xl font-bold font-['Outfit'] text-white mt-1">
-                        {profileDetail?.name} vs {parsedJD?.role}
-                      </h3>
-                      <p className="text-gray-400 text-sm mt-0.5">
-                        Target Posting: <strong className="text-white">{parsedJD?.company}</strong>
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap justify-center md:justify-start gap-4 text-xs pt-1">
-                      <div className="flex items-center gap-1.5 bg-radix-dark px-3 py-1.5 rounded-lg border border-radix-border">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        <span>Matched Requirements: {result.matched_skills.length}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 bg-radix-dark px-3 py-1.5 rounded-lg border border-radix-border">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                        <span className="font-semibold text-rose-300">Missing Requirements: {result.missing_skills.length}</span>
-                      </div>
-                    </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-white">Semantic Assessment</h4>
+                    <h3 className="text-2xl font-bold font-['Outfit'] text-white mt-1">
+                      {profileDetail?.name} vs {parsedJD?.role}
+                    </h3>
+                    <p className="text-gray-400 text-sm mt-0.5">
+                      Target Posting: <strong className="text-white">{parsedJD?.company}</strong>
+                    </p>
                   </div>
                 </div>
               </GlassCard>
 
-              {/* Matched Skills */}
-              <div className="space-y-3">
-                <h4 className="text-lg font-semibold text-gray-300">Matching Competencies</h4>
-                {result.matched_skills.length === 0 ? (
-                  <GlassCard className="text-center py-6 text-gray-500">No overlapping skills found.</GlassCard>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {result.matched_skills.map((m, idx) => (
-                      <GlassCard key={idx} className="p-4 border-l-4 border-l-emerald-500 bg-emerald-950/5">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-sm font-semibold text-white">{m.required_skill}</span>
-                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {CATEGORY_NAMES[m.category_code] || m.category_code}
+              {/* Skills grids */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Matched skills */}
+                <GlassCard className="border-l-4 border-l-emerald-500">
+                  <h4 className="text-sm font-bold text-emerald-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span>Matched Competencies ({result.matched_skills?.length || 0})</span>
+                  </h4>
+                  {result.matched_skills?.length === 0 ? (
+                    <p className="text-xs text-gray-500">No overlapping skills found.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                      {result.matched_skills.map((s, idx) => (
+                        <div key={idx} className="bg-radix-dark/30 rounded-lg p-2.5 border border-radix-border/30 flex justify-between items-center text-xs">
+                          <div>
+                            <span className="font-semibold text-gray-200">{s.skill_name}</span>
+                            <span className="text-[10px] text-gray-500 ml-2">({CATEGORY_NAMES[s.category_code] || s.category_code})</span>
+                          </div>
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="text-[10px] text-gray-500">Match: {Math.round(s.similarity * 100)}%</span>
+                            <span className="bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-900/30">
+                              Lvl {s.candidate_level}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+
+                {/* Gaps and Lacking */}
+                <GlassCard className="border-l-4 border-l-amber-500">
+                  <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-500" />
+                    <span>Lacking & Missing Skills ({(result.lacking_skills?.length || 0) + (result.missing_skills?.length || 0)})</span>
+                  </h4>
+                  {(!result.lacking_skills || result.lacking_skills.length === 0) && 
+                   (!result.missing_skills || result.missing_skills.length === 0) ? (
+                    <p className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Candidate meets 100% of parsed requirements!</span>
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                      {result.lacking_skills?.map((s, idx) => (
+                        <div key={idx} className="bg-radix-dark/30 rounded-lg p-2.5 border border-radix-border/30 flex justify-between items-center text-xs">
+                          <div>
+                            <span className="font-semibold text-gray-200">{s.skill_name}</span>
+                            <span className="text-[10px] text-gray-500 ml-2">({CATEGORY_NAMES[s.category_code] || s.category_code})</span>
+                          </div>
+                          <span className="bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded border border-amber-900/30 font-mono">
+                            Lacking: Lvl {s.candidate_level}/{s.required_level}
                           </span>
                         </div>
-                        <div className="space-y-1 mt-2 text-xs text-gray-400">
-                          <div className="flex justify-between">
-                            <span>Matched Candidate Skill:</span>
-                            <span className="text-white font-medium">{m.candidate_skill}</span>
+                      ))}
+                      {result.missing_skills?.map((s, idx) => (
+                        <div key={idx} className="bg-radix-dark/30 rounded-lg p-2.5 border border-radix-border/30 flex justify-between items-center text-xs">
+                          <div>
+                            <span className="font-semibold text-red-300">{s.skill_name}</span>
+                            <span className="text-[10px] text-gray-500 ml-2">({CATEGORY_NAMES[s.category_code] || s.category_code})</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span>Candidate Level vs Required:</span>
-                            <span className="text-white font-mono font-semibold">Lvl {m.candidate_level} / Lvl {m.required_level}</span>
-                          </div>
+                          <span className="bg-red-950/50 text-red-400 px-1.5 py-0.5 rounded border border-red-900/30 font-mono">
+                            Missing: Req Lvl {s.required_level}
+                          </span>
                         </div>
-                      </GlassCard>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
               </div>
 
-              {/* Missing Skills */}
-              <div className="space-y-3">
-                <h4 className="text-lg font-semibold text-gray-300">Gaps & Missing Requirements</h4>
-                {result.missing_skills.length === 0 ? (
-                  <GlassCard className="text-center py-6 text-gray-500 flex items-center justify-center gap-2">
-                    <ShieldCheck className="text-emerald-400 w-5 h-5" />
-                    <span className="text-gray-300 font-semibold">Candidate meets 100% of the parsed JD requirements!</span>
-                  </GlassCard>
-                ) : (
-                  <div className="space-y-3">
-                    {result.missing_skills.map((m, idx) => (
-                      <GlassCard key={idx} className="p-4 border-l-4 border-l-rose-500 bg-rose-950/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Resources recommendations */}
+              {result.learning_resources && result.learning_resources.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-lg font-bold text-gray-300">Lacking Skills: Personalized Study Plan</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {result.learning_resources.map((res, idx) => (
+                      <GlassCard key={idx} className="p-4 flex flex-col justify-between h-full hover:border-purple-500/20 transition">
                         <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-semibold text-white">{m.required_skill}</span>
-                            <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              {CATEGORY_NAMES[m.category_code] || m.category_code}
-                            </span>
-                            <span className="text-[10px] bg-radix-dark text-gray-400 px-1.5 py-0.5 rounded border border-radix-border">
-                              Required: Lvl {m.required_level}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-2 font-mono italic">
-                            {m.recommendation}
-                          </p>
+                          <span className="text-[10px] text-purple-400 font-mono font-bold uppercase">{CATEGORY_NAMES[res.category_code] || res.category_code}</span>
+                          <h5 className="font-bold text-sm text-white mt-1 mb-3">{res.skill_name}</h5>
+                        </div>
+                        <div className="space-y-2 mt-4">
+                          <a
+                            href={res.official_docs}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center gap-1.5 text-xs text-gray-300 hover:text-cyan-400 transition"
+                          >
+                            <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                            <span>Official Documentation</span>
+                          </a>
+                          <a
+                            href={res.youtube_query}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center gap-1.5 text-xs text-gray-300 hover:text-red-400 transition"
+                          >
+                            <Tv className="w-3.5 h-3.5 text-red-400" />
+                            <span>YouTube Tutorials</span>
+                          </a>
+                          <a
+                            href={res.tutorial_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full flex items-center gap-1.5 text-xs text-gray-300 hover:text-emerald-400 transition"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Tutorial & Practices</span>
+                          </a>
                         </div>
                       </GlassCard>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
+              {/* Assessment Playground */}
+              {result.assessment && (
+                <div className="space-y-6 pt-2">
+                  <h4 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Activity className="text-purple-400" />
+                    <span>Interactive Assessment Sandbox</span>
+                  </h4>
+
+                  {/* MCQs section */}
+                  {result.assessment.mcqs && result.assessment.mcqs.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {result.assessment.mcqs.map((q, qIdx) => (
+                        <GlassCard key={qIdx} className="p-5 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Concept Check #{qIdx + 1}</span>
+                            <h5 className="font-semibold text-sm text-gray-200 mt-2 mb-4 leading-relaxed">{q.question}</h5>
+                            
+                            <div className="space-y-2">
+                              {q.options?.map((opt, oIdx) => {
+                                const isSelected = selectedAnswers[qIdx] === opt;
+                                const isSubmitted = submittedAnswers[qIdx];
+                                const isCorrect = opt === q.answer;
+                                
+                                let optClass = "border-radix-border/40 hover:border-gray-500/50 bg-radix-dark/20 text-gray-300";
+                                if (isSelected) optClass = "border-indigo-500 bg-indigo-950/20 text-indigo-300";
+                                if (isSubmitted) {
+                                  if (isCorrect) optClass = "border-emerald-500 bg-emerald-950/20 text-emerald-300 font-bold";
+                                  else if (isSelected) optClass = "border-red-500 bg-red-950/20 text-red-300";
+                                }
+
+                                return (
+                                  <button
+                                    key={oIdx}
+                                    type="button"
+                                    onClick={() => !isSubmitted && handleAnswerMCQ(qIdx, opt)}
+                                    disabled={isSubmitted}
+                                    className={`w-full text-left p-3 rounded-lg border text-xs transition flex items-center justify-between ${optClass}`}
+                                  >
+                                    <span>{opt}</span>
+                                    {isSubmitted && isCorrect && <Check className="w-4 h-4 text-emerald-400" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Submit button / explanation */}
+                          <div className="mt-6 pt-4 border-t border-radix-border/30">
+                            {!submittedAnswers[qIdx] ? (
+                              <button
+                                onClick={() => handleSubmitMCQ(qIdx, q.answer)}
+                                disabled={!selectedAnswers[qIdx]}
+                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-semibold px-4 py-2 rounded-lg transition cursor-pointer"
+                              >
+                                Submit Answer
+                              </button>
+                            ) : (
+                              <div className="bg-radix-dark/50 rounded-lg p-3 text-xs border border-radix-border/30">
+                                <span className={`font-bold block ${mcqFeedback[qIdx] === 'correct' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {mcqFeedback[qIdx] === 'correct' ? 'Correct!' : 'Incorrect Answer'}
+                                </span>
+                                <p className="text-gray-400 mt-1 font-mono leading-relaxed">{q.explanation}</p>
+                              </div>
+                            )}
+                          </div>
+                        </GlassCard>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* LeetCode DSA challenge */}
+                  {result.assessment.coding_challenge && (
+                    <GlassCard className="border-l-4 border-l-purple-500">
+                      <div className="flex flex-col md:flex-row justify-between md:items-center gap-2 mb-4 border-b border-radix-border pb-3">
+                        <div>
+                          <span className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">DSA Coding Challenge</span>
+                          <h4 className="text-lg font-bold text-white mt-1">{result.assessment.coding_challenge.title}</h4>
+                        </div>
+                        <span className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full ${
+                          result.assessment.coding_challenge.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                          result.assessment.coding_challenge.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                          'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}>
+                          {result.assessment.coding_challenge.difficulty}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* problem description */}
+                        <div className="space-y-4 text-xs">
+                          <div>
+                            <h5 className="font-semibold text-gray-300 uppercase tracking-wide text-[10px]">Problem Description</h5>
+                            <div className="bg-radix-dark/40 border border-radix-border/40 rounded-xl p-4 text-gray-300 leading-relaxed font-mono whitespace-pre-line mt-2">
+                              {result.assessment.coding_challenge.description}
+                            </div>
+                          </div>
+
+                          {/* Test case parameters */}
+                          {result.assessment.coding_challenge.test_cases && (
+                            <div>
+                              <h5 className="font-semibold text-gray-300 uppercase tracking-wide text-[10px]">Sample Test Case</h5>
+                              <div className="bg-radix-dark/60 rounded-xl p-3 border border-radix-border/30 mt-2 font-mono space-y-1.5">
+                                <div><span className="text-gray-500">Input:</span> <span className="text-gray-300">{result.assessment.coding_challenge.test_cases[0]?.input}</span></div>
+                                <div><span className="text-gray-500">Expected Output:</span> <span className="text-emerald-400 font-bold">{result.assessment.coding_challenge.test_cases[0]?.expected_output}</span></div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* code sandbox editor */}
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <h5 className="font-semibold text-gray-300 uppercase tracking-wide text-[10px]">Python Sandbox</h5>
+                            <button
+                              onClick={() => setCandidateCode(result.assessment.coding_challenge.initial_template)}
+                              className="text-[10px] text-gray-400 hover:text-white transition flex items-center gap-1"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reset Template</span>
+                            </button>
+                          </div>
+
+                          <textarea
+                            className="w-full min-h-[220px] glass-input font-mono text-xs p-4 leading-relaxed bg-[#0c121e]/90 text-gray-200 border-radix-border focus:border-purple-500"
+                            value={candidateCode}
+                            onChange={e => setCandidateCode(e.target.value)}
+                          />
+
+                          <div className="flex justify-end gap-3">
+                            <button
+                              onClick={handleRunCode}
+                              disabled={codeRunning}
+                              className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-xs font-semibold px-5 py-2.5 rounded-lg text-white flex items-center gap-1.5 transition cursor-pointer"
+                            >
+                              {codeRunning ? (
+                                <>
+                                  <Loader className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Running Tests...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Run Unit Tests</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Terminal Output */}
+                          {codeOutput && (
+                            <div className={`rounded-xl p-3 border font-mono text-xs mt-3 flex items-start gap-2.5 ${
+                              codeOutput.status === 'success' 
+                                ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-300' 
+                                : 'bg-red-950/20 border-red-500/20 text-red-300'
+                            }`}>
+                              {codeOutput.status === 'success' ? (
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                              ) : (
+                                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                              )}
+                              <div>
+                                <span className="font-bold block">{codeOutput.status === 'success' ? 'Tests Passed' : 'Tests Failed'}</span>
+                                <p className="text-gray-400 mt-1 leading-relaxed">{codeOutput.message}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </GlassCard>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

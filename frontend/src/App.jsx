@@ -313,7 +313,7 @@ export default function App() {
         )}
 
         {activeTab === 'talent-check' && (
-          <TalentCheck activeProfile={activeProfile} />
+          <TalentCheck activeProfile={activeProfile} navTo={navTo} setActiveJD={setActiveJD} setActiveProfile={setActiveProfile} />
         )}
 
         {activeTab === 'skill-matching' && (

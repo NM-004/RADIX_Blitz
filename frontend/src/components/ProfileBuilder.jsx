@@ -28,6 +28,7 @@ export default function ProfileBuilder({ onProfileSelect }) {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
+  const [parserMode, setParserMode] = useState('standard'); // 'standard' or 'advanced'
 
   // Form State
   const [profileId, setProfileId] = useState('');
@@ -66,11 +67,13 @@ export default function ProfileBuilder({ onProfileSelect }) {
   };
 
   // Pre-fill from resume parser
-  const handleParseResume = async (filepath) => {
+  const handleParseResume = async (filepath, mode = parserMode) => {
     setParsing(true);
-    showMsg('info', 'Parsing resume content and extracting technical indicators...');
+    showMsg('info', mode === 'advanced' 
+      ? 'Running Advanced Parser (Converting PDF to DOCX + Parsing layout XML + Structuring via Gemini AI)...' 
+      : 'Parsing resume content and extracting technical indicators...');
     try {
-      const data = await api.parseResume(filepath);
+      const data = await api.parseResume(filepath, mode);
       
       // Update form states with parsed data
       setName(data.name || '');
@@ -104,7 +107,7 @@ export default function ProfileBuilder({ onProfileSelect }) {
     const val = e.target.value;
     setSelectedResume(val);
     if (val) {
-      handleParseResume(val);
+      handleParseResume(val, parserMode);
     }
   };
 
@@ -119,7 +122,7 @@ export default function ProfileBuilder({ onProfileSelect }) {
       // 1. Upload CV to Django
       const uploadRes = await api.uploadCV(file);
       // 2. Parse the uploaded CV via FastAPI using the saved path
-      await handleParseResume(uploadRes.path);
+      await handleParseResume(uploadRes.path, parserMode);
     } catch (err) {
       showMsg('error', `Upload or parsing failed: ${err.message}`);
       setParsing(false);
@@ -150,13 +153,29 @@ export default function ProfileBuilder({ onProfileSelect }) {
       const res = await api.saveProfile(profileData);
       setProfileId(res.id);
       
+      // Index candidate skills into the TurboQuant Vector DB index
+      try {
+        await api.indexUserProfile({
+          id: res.id,
+          name,
+          email,
+          skills,
+          preferred_roles: preferredRoles,
+          certifications,
+          hackathons,
+          internships
+        });
+      } catch (vectorErr) {
+        console.error("Vector database indexing failed:", vectorErr);
+      }
+      
       // Fetch full profile detail back to confirm
       const detailedProfile = await api.getProfileDetail(res.id);
       if (onProfileSelect) {
         onProfileSelect(detailedProfile);
       }
       
-      showMsg('success', 'Profile saved successfully to PostgreSQL database!');
+      showMsg('success', 'Profile saved to PostgreSQL and vectorized in TurboQuant index successfully!');
     } catch (err) {
       showMsg('error', `Failed to save profile: ${err.message}`);
     } finally {
@@ -228,6 +247,34 @@ export default function ProfileBuilder({ onProfileSelect }) {
             <p className="text-gray-400 text-xs leading-relaxed">
               Accelerate profile creation. Select one of the 4 preloaded test candidates to instantly simulate resume parsing, or upload your own file.
             </p>
+            <div className="flex items-center gap-2 mt-3">
+              <span className="text-[10px] uppercase font-bold text-gray-500">Parser Mode:</span>
+              <div className="inline-flex rounded-lg border border-radix-border/80 p-0.5 bg-radix-dark/40">
+                <button
+                  type="button"
+                  onClick={() => setParserMode('standard')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition ${
+                    parserMode === 'standard' 
+                      ? 'bg-indigo-600 text-white shadow-sm' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setParserMode('advanced')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition flex items-center gap-1 ${
+                    parserMode === 'advanced' 
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>Advanced XML</span>
+                </button>
+              </div>
+            </div>
           </div>
           
           <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-end">

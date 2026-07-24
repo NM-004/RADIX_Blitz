@@ -11,6 +11,9 @@ import { PrismaClient } from '@prisma/client';
 // Load environment variables
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -351,17 +354,59 @@ app.get('/api/history/talent-check', async (req, res) => {
 });
 
 app.post('/api/history/talent-check', async (req, res) => {
-  const { profile_id, role_id, readiness_score, gap_details } = req.body;
+  const { profile_id, role_id, company_name, role_title, expectations, readiness_score, gap_details } = req.body;
 
-  if (!profile_id || !role_id || readiness_score === undefined || !gap_details) {
+  if (!profile_id || (!role_id && (!company_name || !role_title)) || readiness_score === undefined || !gap_details) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
+    let finalRoleId = role_id;
+
+    if (!role_id || role_id === 'custom') {
+      // Find or create company
+      const company = await prisma.company.upsert({
+        where: { name: company_name || "Custom Company" },
+        update: {},
+        create: { name: company_name || "Custom Company" }
+      });
+
+      // Find or create role
+      let role = await prisma.role.findFirst({
+        where: {
+          companyId: company.id,
+          title: role_title || "Custom Role"
+        }
+      });
+
+      if (!role) {
+        role = await prisma.role.create({
+          data: {
+            title: role_title || "Custom Role",
+            companyId: company.id
+          }
+        });
+
+        // Also save expectations if provided, so next time it is a full benchmark!
+        if (expectations && typeof expectations === 'object') {
+          for (const [catCode, level] of Object.entries(expectations)) {
+            await prisma.companySkillExpectation.create({
+              data: {
+                roleId: role.id,
+                categoryCode: catCode,
+                expectedLevel: parseInt(level) || 5
+              }
+            });
+          }
+        }
+      }
+      finalRoleId = role.id;
+    }
+
     const resultRecord = await prisma.talentCheckResult.create({
       data: {
         profileId: profile_id,
-        roleId: role_id,
+        roleId: finalRoleId,
         readinessScore: parseInt(readiness_score),
         gapDetails: gap_details
       }

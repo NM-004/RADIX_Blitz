@@ -1,7 +1,9 @@
 const DJANGO_BASE_URL = 'http://localhost:8000/api';
-const FASTAPI_BASE_URL = 'http://localhost:8001';
+const FASTAPI_PARSER_URL = 'http://localhost:8001';
+const FASTAPI_EVAL_URL = 'http://localhost:8002';
+const FASTAPI_SKILLMATCH_URL = 'http://localhost:8003';
 
-async def_request(url, options = {}) {
+async function def_request(url, options = {}) {
   try {
     const response = await fetch(url, {
       ...options,
@@ -54,27 +56,60 @@ export const api = {
     body: JSON.stringify(result),
   }),
 
-  // FastAPI Microservice Endpoints
-  parseJD: (filepath) => def_request(`${FASTAPI_BASE_URL}/parse-jd`, {
+  // FastAPI Parser Service Endpoints (Port 8001)
+  parseJD: (filepath, parserType = 'standard') => def_request(`${FASTAPI_PARSER_URL}/parse-jd`, {
     method: 'POST',
-    body: JSON.stringify({ filepath }),
+    body: JSON.stringify({ filepath, parser_type: parserType }),
   }),
-  parseResume: (filepath) => def_request(`${FASTAPI_BASE_URL}/parse-resume`, {
+  parseResume: (filepath, parserType = 'standard') => def_request(`${FASTAPI_PARSER_URL}/parse-resume`, {
     method: 'POST',
-    body: JSON.stringify({ filepath }),
+    body: JSON.stringify({ filepath, parser_type: parserType }),
   }),
-  runTalentCheck: (profileSkills, expectations) => def_request(`${FASTAPI_BASE_URL}/talent-check`, {
+
+  // FastAPI Evaluation & Search Service Endpoints (Port 8002)
+  runTalentCheck: (profileSkills, expectations) => def_request(`${FASTAPI_EVAL_URL}/talent-check`, {
     method: 'POST',
     body: JSON.stringify({
       profile: { skills: profileSkills },
       expectations: expectations,
     }),
   }),
-  runSkillMatch: (candidateSkills, jdSkills) => def_request(`${FASTAPI_BASE_URL}/skill-match`, {
+  runSkillMatch: (candidateSkills, jdSkills) => def_request(`${FASTAPI_EVAL_URL}/skill-match`, {
     method: 'POST',
     body: JSON.stringify({
       candidate_skills: candidateSkills,
       jd_skills: jdSkills,
     }),
+  }),
+  findJobs: (preferredRoles, skills) => def_request(`${FASTAPI_EVAL_URL}/find-jobs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      preferred_roles: preferredRoles,
+      skills: skills,
+      education: ""
+    }),
+  }),
+
+  // FastAPI Skill Match & Assessments Service Endpoints (Port 8003)
+  indexUserProfile: (profileData) => def_request(`${FASTAPI_SKILLMATCH_URL}/index-user-profile`, {
+    method: 'POST',
+    body: JSON.stringify(profileData),
+  }),
+  indexJobDescription: (jdData) => def_request(`${FASTAPI_SKILLMATCH_URL}/index-job-description`, {
+    method: 'POST',
+    body: JSON.stringify(jdData),
+  }),
+  evaluateDetailedSkillMatch: (profileId, company, role, skills, snippet = "") => def_request(`${FASTAPI_SKILLMATCH_URL}/evaluate-skill-match`, {
+    method: 'POST',
+    body: JSON.stringify({
+      profile_id: profileId,
+      company,
+      role,
+      skills,
+      snippet,
+    }),
+  }),
+  clearJDStore: () => def_request(`${FASTAPI_SKILLMATCH_URL}/clear-jd-store`, {
+    method: 'POST',
   }),
 };
